@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Perfect Shoot</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            touch-action: none;
+            background: #f5f5f5;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(to bottom, #87CEEB, #E0F7FA);
+            width: 100%;
+            height: 100vh;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+        }
+        #startButton {
+            padding: 15px 30px;
+            font-size: 20px;
+            background: #2ecc71;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="startScreen">
+        <h1>PERFECT SHOOT</h1>
+        <p>Topu sürükleyip bırakarak atış yapın</p>
+        <p>Tam ortaya atınca 2x puan!</p>
+        <button id="startButton">OYNA</button>
+    </div>
+
+    <script>
+        // Oyun başlatma ekranı
+        document.getElementById('startButton').addEventListener('click', function() {
+            document.getElementById('startScreen').style.display = 'none';
+            initGame();
+        });
+
+        function initGame() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Canvas boyutunu ayarla
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                resetHoopPosition();
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+            
+            // Oyun değişkenleri
+            let score = 0;
+            let highScore = localStorage.getItem('highScore') || 0;
+            let perfectCombo = 0;
+            let gameStarted = false;
+            
+            // Top nesnesi
+            let ball = { 
+                x: canvas.width * 0.2, 
+                y: canvas.height - 50, 
+                radius: 20, 
+                dx: 0, 
+                dy: 0,
+                color: '#3498db'
+            };
+            
+            // Sepet nesnesi
+            let hoop = {
+                x: 0,
+                y: canvas.height * 0.6,
+                width: 80,
+                height: 40,
+                color: '#e74c3c'
+            };
+            
+            function resetHoopPosition() {
+                hoop.x = canvas.width - 100;
+                hoop.y = canvas.height * 0.6;
+            }
+            
+            // Çizim fonksiyonları
+            function drawBall() {
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+                ctx.fillStyle = ball.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.closePath();
+            }
+            
+            function drawHoop() {
+                // Sepet arkası (file görünümü)
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(hoop.x, hoop.y, hoop.width, hoop.height);
+                
+                // Sepet önü
+                ctx.fillStyle = hoop.color;
+                ctx.fillRect(hoop.x, hoop.y - 5, hoop.width, 5);
+                ctx.fillRect(hoop.x, hoop.y + hoop.height, hoop.width, 5);
+                ctx.fillRect(hoop.x - 5, hoop.y - 5, 5, hoop.height + 10);
+                ctx.fillRect(hoop.x + hoop.width, hoop.y - 5, 5, hoop.height + 10);
+                
+                // Perfect alanı (ortası)
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+                ctx.fillRect(hoop.x + hoop.width/2 - 10, hoop.y, 20, hoop.height);
+            }
+            
+            function drawScore() {
+                ctx.font = '24px Arial';
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillText(`Puan: ${score}`, 20, 40);
+                ctx.fillText(`En Yüksek: ${highScore}`, 20, 70);
+                
+                if (perfectCombo > 0) {
+                    ctx.fillStyle = '#f39c12';
+                    ctx.fillText(`Perfect Seri: ${perfectCombo}`, 20, 100);
+                }
+            }
+            
+            function drawPowerLine(startX, startY, endX, endY) {
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Güç göstergesi
+                const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                ctx.fillStyle = length > 150 ? '#e74c3c' : '#2ecc71';
+                ctx.fillRect(startX - 5, startY - 5, 10, 10);
+            }
+            
+            // Top atış fizikleri
+            function shootBall(dx, dy) {
+                const power = Math.min(Math.sqrt(dx*dx + dy*dy), 300);
+                ball.dx = -dx * 0.15;
+                ball.dy = -dy * 0.15;
+                gameStarted = true;
+            }
+            
+            // Oyun döngüsü
+            function gameLoop() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Top hareketi
+                if (gameStarted) {
+                    ball.x += ball.dx;
+                    ball.y += ball.dy;
+                    ball.dy += 0.4; // Yerçekimi
+                    
+                    // Duvarlardan sekme
+                    if (ball.x - ball.radius < 0 || ball.x + ball.radius > canvas.width) {
+                        ball.dx *= -0.7;
+                        ball.x = ball.x < ball.radius ? ball.radius : canvas.width - ball.radius;
+                    }
+                    
+                    // Zemin çarpışma kontrolü
+                    if (ball.y + ball.radius > canvas.height) {
+                        ball.y = canvas.height - ball.radius;
+                        ball.dy *= -0.6;
+                        ball.dx *= 0.8;
+                        
+                        // Durma kontrolü
+                        if (Math.abs(ball.dy) < 1 && Math.abs(ball.dx) < 1) {
+                            gameStarted = false;
+                            resetBall();
+                        }
+                    }
+                    
+                    // Sepet çarpışma kontrolü
+                    if (ball.x + ball.radius > hoop.x && 
+                        ball.x - ball.radius < hoop.x + hoop.width &&
+                        ball.y + ball.radius > hoop.y && 
+                        ball.y - ball.radius < hoop.y + hoop.height) {
+                        
+                        // Mükemmel atış kontrolü (tam ortada)
+                        const centerHoop = hoop.x + hoop.width/2;
+                        const isPerfect = Math.abs(ball.x - centerHoop) < 10;
+                        
+                        if (isPerfect) {
+                            score += 2;
+                            perfectCombo++;
+                            // Her 5 perfect'te ekstra puan
+                            if (perfectCombo % 5 === 0) {
+                                score += 2;
+                                showMessage("COMBO BONUS!", ball.x, ball.y);
+                            }
+                            showMessage("PERFECT!", ball.x, ball.y);
+                        } else {
+                            score += 1;
+                            perfectCombo = 0;
+                            showMessage("GOOD!", ball.x, ball.y);
+                        }
+                        
+                        // Yüksek skoru güncelle
+                        if (score > highScore) {
+                            highScore = score;
+                            localStorage.setItem('highScore', highScore);
+                        }
+                        
+                        // Topu başa al
+                        resetBall();
+                        gameStarted = false;
+                        
+                        // Her 10 puanda sepeti hareket ettir
+                        if (score % 10 === 0) {
+                            moveHoopRandomly();
+                        }
+                    }
+                }
+                
+                drawHoop();
+                drawBall();
+                drawScore();
+                
+                // Güç çizgisi (sürükleme sırasında)
+                if (isDragging) {
+                    drawPowerLine(startPoint.x, startPoint.y, currentPoint.x, currentPoint.y);
+                }
+                
+                requestAnimationFrame(gameLoop);
+            }
+            
+            function showMessage(text, x, y) {
+                ctx.font = '20px Arial';
+                ctx.fillStyle = '#f1c40f';
+                ctx.textAlign = 'center';
+                ctx.fillText(text, x, y - 30);
+                ctx.textAlign = 'left';
+            }
+            
+            function moveHoopRandomly() {
+                hoop.y = canvas.height * (0.4 + Math.random() * 0.3);
+            }
+            
+            function resetBall() {
+                ball.x = canvas.width * 0.2;
+                ball.y = canvas.height - 50;
+                ball.dx = 0;
+                ball.dy = 0;
+            }
+            
+            // Kullanıcı girişleri
+            let isDragging = false;
+            let startPoint = { x: 0, y: 0 };
+            let currentPoint = { x: 0, y: 0 };
+            
+            // Dokunmatik kontroller
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+            
+            // Mouse kontrolleri (PC için)
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            
+            function handleTouchStart(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                startPoint.x = touch.clientX;
+                startPoint.y = touch.clientY;
+                currentPoint = { ...startPoint };
+                
+                // Topa dokunuldu mu kontrolü
+                const dist = Math.sqrt(Math.pow(touch.clientX - ball.x, 2) + 
+                                     Math.pow(touch.clientY - ball.y, 2));
+                if (dist < ball.radius + 20) {
+                    isDragging = true;
+                }
+            }
+            
+            function handleTouchMove(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    currentPoint.x = touch.clientX;
+                    currentPoint.y = touch.clientY;
+                }
+            }
+            
+            function handleTouchEnd(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    const dx = currentPoint.x - startPoint.x;
+                    const dy = currentPoint.y - startPoint.y;
+                    shootBall(dx, dy);
+                    isDragging = false;
+                }
+            }
+            
+            function handleMouseDown(e) {
+                startPoint.x = e.clientX;
+                startPoint.y = e.clientY;
+                currentPoint = { ...startPoint };
+                
+                // Topa tıklandı mı kontrolü
+                const dist = Math.sqrt(Math.pow(e.clientX - ball.x, 2) + 
+                                      Math.pow(e.clientY - ball.y, 2));
+                if (dist < ball.radius + 20) {
+                    isDragging = true;
+                }
+            }
+            
+            function handleMouseMove(e) {
+                if (isDragging) {
+                    currentPoint.x = e.clientX;
+                    currentPoint.y = e.clientY;
+                }
+            }
+            
+            function handleMouseUp(e) {
+                if (isDragging) {
+                    const dx = currentPoint.x - startPoint.x;
+                    const dy = currentPoint.y - startPoint.y;
+                    shootBall(dx, dy);
+                    isDragging = false;
+                }
+            }
+            
+            // Oyunu başlat
+            gameLoop();
+        }
+    </script>
+</body>
+</html>
